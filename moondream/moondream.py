@@ -6,6 +6,7 @@ from transformers import PreTrainedModel
 from .modeling_phi import PhiForCausalLM
 from .configuration_moondream import PhiConfig
 
+
 class Moondream(PreTrainedModel):
     config_class = MoondreamConfig
     _supports_flash_attn_2 = True
@@ -16,7 +17,7 @@ class Moondream(PreTrainedModel):
             use_flash_attn=config._attn_implementation == "flash_attention_2"
         )
 
-        if type(config.text_config) == dict:
+        if isinstance(config.text_config, dict):
             phi_config = PhiConfig(
                 **config.text_config, attn_implementation=config._attn_implementation
             )
@@ -176,3 +177,18 @@ class Moondream(PreTrainedModel):
             x.strip()
             for x in tokenizer.batch_decode(output_ids, skip_special_tokens=True)
         ]
+
+    def forward(self, images, tokens, attn_mask, labels=None):
+        with torch.no_grad():
+            img_embs = self.vision_encoder(images)
+
+        tok_embs = self.text_model.get_input_embeddings()(tokens)
+        inputs_embeds = torch.cat(
+            (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
+        )
+        outputs = self.text_model(
+            inputs_embeds=inputs_embeds,
+            labels=labels,
+            attention_mask=attn_mask,
+        )
+        return outputs
